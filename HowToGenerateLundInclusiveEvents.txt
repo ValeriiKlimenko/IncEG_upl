@@ -1,0 +1,325 @@
+******************************************************
+
+Producing lund files with Inclusive Electron Events
+
+	  Raffaella De Vita, Silvia Pisano
+
+******************************************************
+
+
+Aim of the software is to produce events in the LUND format containing inclusive electrons in an extended kinematics, ranging from elastic to DIS regime.
+
+The procedure consists in two steps:
+
+1) First, it makes use of the Misak code (in Fortran), that calculates the inclusive cross-section at given values of (theta, E) of the outgoing electron.
+
+It produces a table that maps the cross-section as a function of (theta, E). It is then used in the next step by the generator to produce inclusive events accordingly.
+
+2) The generator itself, that reads the table produced at the previous point and that generate inclusive events.
+
+------------------------------------------------------------------------------------------------
+
+STEP 1: PRODUCE A TABLE WITH THE VALUE OF THE CROSS-SECTION IN A GIVEN (THETA, E) RANGE
+
+------------------------------------------------------------------------------------------------
+
+The following software is contained in the directory
+
+cross_section_calculation/
+
+First of all, compile the executable "inclusive" through
+
+g77 -o inclusive inclusive.f
+
+or
+
+gfortran -o inclusive inclusive.f
+
+depending on the compiler installed on the machine.
+
+Set then the configuration to be analyzed through the file init_incl.dat.
+
+It contains the following text:
+
+
+INCIDENT   ELECTRON    6.000   0.000   0.000   0.000   0.000   0.000      
+TARGET     H2          1.000   1.000   0.000   0.100   0.000   0.000
+RAD_EFFECT YES         5.000   0.020   0.010   0.010   0.050   0.000  
+
+SWELLING   V1          0.000   0.000   0.000   0.000   0.000   0.000  
+EMC        NES         0.000   0.000   0.000   0.000   0.000   0.000  
+
+ELEC_SPECT             0.000   0.000   0.000   0.000   0.000   0.000
+Ee` -RANGE YES         0.500   6.000   0.005   0.000   0.000   0.000
+THe -RANGE             5.000  35.000   0.500  15.000   0.000   0.000
+Q0  -RANGE NES         0.020   0.100   0.001   0.000   0.000   0.000
+W   -RANGE NO          0.900   0.910   0.025   0.000   0.000   0.000
+X   -RANGE NES         0.300   1.890   0.050   0.000   0.000   0.000
+
+The relevant elements are the INCIDENT ELECTRON ENERGY (6 GeV in the example) and the ranges in (theta, E): 
+
+Ee` -RANGE YES         0.500   6.000   0.005   0.000   0.000   0.000
+THe -RANGE             5.000  35.000   0.500  15.000   0.000   0.000
+
+to be set accordingly to the configuration to be analyzed.
+
+The code can be run through the command
+
+./inclusive
+
+and produces as output the file
+
+fort.26
+
+Its columns represent
+
+Theta  E'  Sigma/dE/dOmega   Sigma_radiated/dE/dOmega   Q2   W Sigma/dW/dQ2  Sigma_radiated/dW/dQ2
+
+
+Tables for the standard 6 and 11 GeV kinematics have been already produced. They are stored in the directory
+
+cross_section_data/
+
+File for 6 and 11 GeV are, respectively:
+
+data_5_35_0.5_6.0_6.0GeV.dat
+
+data_5_35_0.5_10.9_11.0GeV.dat
+
+
+---------------------------------------------------------------
+
+STEP 2: GENERATE INCLUSIVE ELECTRON EVENTS IN THE LUND FORMAT
+
+---------------------------------------------------------------
+
+In order to generate a set of inclusive events stored in the LUND format, run the script
+
+generate_lund_events.C
+
+as
+
+root -b -q generate_lund_events.C
+
+It contains the code
+
+{
+
+  gSystem->CompileMacro("DisFunctions.C", "kf");
+  gSystem->CompileMacro("GenFunctions.C", "kf");
+  gSystem->CompileMacro("InclusiveRateAnalysis.C");
+  t=new InclusiveRateAnalysis();
+  /* 11 GeV beam energy */
+  t->SetKinematicLimits( 5, 35, 0.5, 0.5, 10.9, 0.005, 75674, 11.0 );
+  t->SetFile("cross_section_data/data_5_35_0.5_10.9_11.0GeV.dat");
+  /* --------- */
+  /* 6 GeV beam energy */
+  // t->SetKinematicLimits( 5, 35, 0.5, 0.5, 6.0, 0.005, 46872, 6 );
+  // t->SetFile("cross_section_data/data_5_35_0.5_6.0_6.0GeV.dat");
+  /* --------- */
+  t->PrepareOutput();
+  t->BookHistos();
+  t->SetLuminosity( pow( 10, 35 ) );
+  t->ReadDataFile();
+  t->PlotCrossSectionDependences();
+  t->GeneratePseudoData( 100000, 1000, "lund_files");
+  t->CompareGenEventsToOriginal();
+  t->SaveOutput();
+  delete t;
+
+}
+
+
+In order to produce a set of LUND files, one has to set
+
+1) kinematic limits of the explored range. They are set through the method
+
+ t->SetKinematicLimits( 5, 35, 0.5, 0.5, 10.9, 0.005, 75674, 11.0 );
+ 
+where different arguments correspond to
+
+theta_min, theta_max, theta_step, energy_min, energy_max, energy_step, _data_file_n_lines, beam_energy
+
+More in details,
+
+_data_file_n_lines
+
+corresponds to the number of lines of the data files ( e.g. cross_section_data/data_5_35_0.5_10.9_11.0GeV.dat) that gives the number of kinematics points used to map the cross section dependence.
+
+n. b. It can be obtained from the shell through
+
+wc -l _data_file_name
+
+e.g.:
+
+[pisanos@jlabmn software_to_git]$ wc -l cross_section_data/data_5_35_0.5_6.0_6.0GeV.dat 
+
+46872 cross_section_data/data_5_35_0.5_6.0_6.0GeV.dat
+
+[pisanos@jlabmn software_to_git]$ 
+
+
+2) File name containing the cross-section values generated in the previous step:
+
+  t->SetFile("cross_section_data/data_5_35_0.5_10.9_11.0GeV.dat");
+
+
+3) Default output rootfile - with some monitoring histograms - is named, in default, as the data file name, where the extension ".dat" is replaced by ".root".
+
+t->PrepareOutput();
+
+It will produce the file
+
+data_5_35_0.5_10.9_11.0GeV.root
+
+A further argument can be passed to add suffix before the .root extension:
+
+ t->PrepareOutput("_test");
+
+for example, will produce the file
+
+data_5_35_0.5_10.9_11.0GeV_test.root
+
+
+4) Luminosity for rate estimate can be set through
+
+ t->SetLuminosity( pow( 10, 35 ) );
+
+that, in this case, corresponds to 10^35 cm^-2 s^-1.
+
+
+5) The method
+
+  t->GeneratePseudoData( 100000, 1000, "lund_files");
+
+is the actual generator. Arguments are
+
+n1 ( = 100000 in the example): number of inclusive events to be generated
+
+n2 ( = 1000   in the example): number of events to store per lund files
+
+n3 ( = "lund_files"         ): directory for storing the lund files - if any.
+
+
+6) Finally, the (optional) method
+
+  t->CompareGenEventsToOriginal();
+
+adds in the output rootfile some monitoring histograms as the comparison of the generated distributions to the original ones.
+
+
+* ------------------------------------- *
+
+      OUTPUT MESSAGE OF THE MACRO
+
+* ------------------------------------- *
+
+While running, the macro provides the following information:
+
+**************************************************************************************
+
+ Analyzing the range 5 - 35 in step of 0.5, with Npoints=61 and E_{beam} = 11 
+
+ Analyzing the range 0.5 - 10.9 in step of 0.005, with Npoints=2081 and E_{beam} = 11 
+
+ Analyzing file cross_section_data/data_5_35_0.5_10.9_11.0GeV.dat
+
+ Luminosity set to 1e+35 cm^-2 s^-1 
+
+ Total rate is 1.95363 kHz 
+
+ Integrated rad cross-section is 0.370401 mubarn 
+
+ _n_lund_files is 5
+
+ Generated N events 
+
+**************************************************************************************
+
+
+First two lines report the range explored in energy and theta and the number of kinematical points used in the cross-section calculation through Misak generator.
+
+Third line shows the name of the file (coming from Misak' code) used to generate the events.
+
+Fourth line shows the set luminosity.
+
+Fifth line is the total inclusive electron rate estimated in the set range, at the given luminosity, by applying the clasev phi-acceptance.
+
+Sisth line is the integrated cross-section in the range.
+
+Last lines show the number of lund files to be produced (depending on the number of generated events and the number of events to be allocated in any lund file),
+while the last lines update on the progress on the actual number of generated events.
+
+* ------------------------------------- *
+
+      CONTENT OF THE OUTPUT FILE
+
+* ------------------------------------- *
+
+The output file contains different objects (TGraph, histograms or canvases).
+
+
+a) The canvas
+
+TCanvas  c_mg
+
+shows the cross-section (top plot) and rate (bottom plot) calculated through the generator and, for the rate, estimated by using the "clasev" fastMC.
+
+while
+
+TCanvas  c_gen_check;1
+
+show the cross-section distribution as extracted from the generated data - to cross-check they are consistent with the original distribution.
+
+
+b) The TGraphs
+
+  TGraph   ge_sigma_rad_theta_N
+  TGraph   ge_rate_theta_N
+
+show the distributions as a function of the electron energy of the rate and cross-section at theta=N (deg).
+
+n.b. Look at them setting the logarithmic scale on the y axis through
+
+gPad->SetLogy(1)
+
+
+c) The histograms
+
+   TH1D     h_projY_theta_22
+
+show the distribution of the cross-section at theta = N (deg) of the generated data.
+
+n.b. Look at them setting the logarithmic scale on the y axis through
+
+gPad->SetLogy(1)
+
+
+d) The canvases
+
+  TCanvas  c_compare_theta_N
+
+show the comparisons among the original (solid, black curve) and the generated data (colored curve) at theta=N (deg), and appear
+in the output rootfile if the method at point #6 of the previous instructions, i.e.
+
+t->CompareGenEventsToOriginal();
+
+has been called.
+
+
+
+* -------------------------------------------------------------------------------------------- *
+
+p.s. To use the pre-existing cross-section tables, the settings
+
+  /* 11 GeV beam energy */
+  t->SetKinematicLimits( 5, 35, 0.5, 0.5, 10.9, 0.005, 75674, 11.0 );
+  t->SetFile("cross_section_data/data_5_35_0.5_10.9_11.0GeV.dat");
+  /* --------- */
+  /* 6 GeV beam energy */
+  // t->SetKinematicLimits( 5, 35, 0.5, 0.5, 6.0, 0.005, 46872, 6 );
+  // t->SetFile("cross_section_data/data_5_35_0.5_6.0_6.0GeV.dat");
+  /* --------- */
+
+
+can be applied, for 11 or 6 GeV respectively.
